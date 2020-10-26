@@ -24,8 +24,7 @@ namespace WebOptimizer
 
             foreach (string key in config.Content.Keys)
             {
-                IFileInfo input = fileProvider.GetFileInfo(key);
-                content[key] = Adjust(config.Content[key].AsString(), input, env);
+                content[key] = Adjust(config.Content[key].AsString(), env);
             }
 
             config.Content = content;
@@ -33,31 +32,24 @@ namespace WebOptimizer
             return Task.CompletedTask;
         }
 
-        private static byte[] Adjust(string content, IFileInfo input, IWebHostEnvironment env)
+        private static byte[] Adjust(string content, IWebHostEnvironment env)
         {
-            string inputDir = Path.GetDirectoryName(input.PhysicalPath);
-
             Match match = _rxUrl.Match(content);
 
             // Ignore references with protocols
-            if(match.Value.Contains("://") || match.Value.StartsWith("//") || match.Value.StartsWith("data:"))
+            if (match.Value.Contains("://") || match.Value.StartsWith("//") || match.Value.StartsWith("data:"))
                 content.AsByteArray();
 
             while (match.Success)
             {
                 string urlValue = match.Groups[3].Value;
-                string dir = inputDir;
+                string dir = env.WebRootPath;
 
                 //prevent query string from causing error
                 string[] pathAndQuery = urlValue.Split(new[] { '?' }, 2, StringSplitOptions.RemoveEmptyEntries);
                 string pathOnly = pathAndQuery[0];
                 string queryOnly = pathAndQuery.Length == 2 ? pathAndQuery[1] : string.Empty;
-
-                if (pathOnly.StartsWith("/", StringComparison.Ordinal))
-                {
-                    dir = env.WebRootPath;
-                }
-
+             
                 var info = new FileInfo(Path.Combine(dir, pathOnly.TrimStart('/')));
 
                 if (!info.Exists)

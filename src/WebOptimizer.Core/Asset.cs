@@ -260,10 +260,7 @@ namespace WebOptimizer
         /// </summary>
         public static IFileProvider GetFileProvider(this IAsset asset, IWebHostEnvironment env)
         {
-            return asset.GetCustomFileProvider(env) ??
-                   (env.WebRootFileProvider is CompositeFileProvider
-                       ? (env.WebRootFileProvider as CompositeFileProvider).FileProviders.Last()
-                       : env.WebRootFileProvider);
+            return asset.GetCustomFileProvider(env) ?? env.WebRootFileProvider;
         }
 
         /// <summary>

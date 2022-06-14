@@ -46,13 +46,9 @@ namespace WebOptimizer.Taghelpers
             }
 
             string href = GetValue("href", output);
-            string pathBase = null;
-            if (CurrentViewContext.HttpContext.Request.PathBase.HasValue )
-            {
-                pathBase = CurrentViewContext.HttpContext.Request.PathBase.Value;
-            }
+            string pathBase = CurrentViewContext.HttpContext?.Request?.PathBase.Value;
 
-            if (pathBase != null && href.StartsWith(pathBase))
+            if (!string.IsNullOrEmpty(pathBase) && href.StartsWith(pathBase))
             {
                 href = href.Substring(pathBase.Length);
             }                
@@ -101,7 +97,7 @@ namespace WebOptimizer.Taghelpers
 
                     fileToAdd = Path.ChangeExtension(file, "css");
                 }
-                string href = AddFileVersionToPath(fileToAdd, asset);
+                string href = AddPathBase(AddFileVersionToPath(fileToAdd, asset));
                 output.PostElement.AppendHtml($"<link href=\"{href}\" {string.Join(" ", attrs)} />" + Environment.NewLine);
             }
         }

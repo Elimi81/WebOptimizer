@@ -12,7 +12,6 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.FileSystemGlobbing;
-using Microsoft.Extensions.FileSystemGlobbing.Abstractions;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
 
@@ -20,8 +19,8 @@ namespace WebOptimizer
 {
     internal class Asset : IAsset
     {
-        private static FileVersionProvider _fileVersionProvider;
         internal const string PhysicalFilesKey = "PhysicalFiles";
+        private readonly object _sync = new object();
 
         public Asset(string route, string contentType, IAssetPipeline pipeline, IEnumerable<string> sourceFiles)
             : this(route, contentType, sourceFiles)
@@ -31,21 +30,22 @@ namespace WebOptimizer
         {
             Route = route ?? throw new ArgumentNullException(nameof(route));
             ContentType = contentType ?? throw new ArgumentNullException(nameof(contentType));
-            SourceFiles = sourceFiles ?? throw new ArgumentNullException(nameof(sourceFiles));
+            SourceFiles = new HashSet<string>(sourceFiles ?? throw new ArgumentNullException(nameof(sourceFiles)));
             Processors = new List<IProcessor>();
             Items = new Dictionary<string, object>();
         }
 
         public string Route { get; private set; }
 
-        public IEnumerable<string> SourceFiles { get; internal set; }
+        public IList<string> ExcludeFiles { get; } = new List<string>();
+
+        public HashSet<string> SourceFiles { get; }
 
         public string ContentType { get; private set; }
 
         public IList<IProcessor> Processors { get; }
 
         public IDictionary<string, object> Items { get; }
-
 
         public async Task<byte[]> ExecuteAsync(HttpContext context, IWebOptimizerOptions options)
         {
@@ -88,50 +88,52 @@ namespace WebOptimizer
         {
             var files = new List<string>();
 
-            foreach (string sourceFile in asset.SourceFiles)
+            if (asset.SourceFiles.Any())
             {
-                string outSourceFile;
-                var provider = asset.GetFileProvider(env, sourceFile, out outSourceFile);
-
-                if (provider.GetFileInfo(outSourceFile).Exists)
+                foreach (string sourceFile in asset.SourceFiles)
                 {
-                    if (!files.Contains(sourceFile))
-                    {
-                        files.Add(sourceFile);
-                    }
-                }
-                else
-                {
-                    var fileInfo = provider.GetFileInfo("/");
-                    string root = fileInfo.PhysicalPath;
+                    var provider = asset.GetFileProvider(env, sourceFile, out string outSourceFile);
 
-                    if (root != null)
-                    {
-                        var dir = new DirectoryInfoWrapper(new DirectoryInfo(root));
-                        var matcher = new Matcher();
-                        matcher.AddInclude(outSourceFile);
-                        PatternMatchingResult globbingResult = matcher.Execute(dir);
-                        IEnumerable<string> fileMatches = globbingResult.Files.Select(f => f.Path.Replace(root, string.Empty));
-
-                        if (!fileMatches.Any())
-                        {
-                            throw new FileNotFoundException($"No files found matching \"{sourceFile}\" exist in \"{dir.FullName}\"");
-                        }
-
-                        files.AddRange(fileMatches.Where(f => !files.Contains(f)));
-
-                    }
-                    else
+                    if (asset.ExcludeFiles.Count == 0 && provider.GetFileInfo(outSourceFile).Exists)
                     {
                         if (!files.Contains(sourceFile))
                         {
                             files.Add(sourceFile);
                         }
                     }
-                }
-            }
+                    else
+                    {
+                        var virtualFilePaths = provider.GetAllFiles("/");
 
-            asset.Items[PhysicalFilesKey] = files;
+                        var matcher = new Matcher();
+                        matcher.AddInclude(outSourceFile);
+                        matcher.AddExcludePatterns(asset.ExcludeFiles);
+                        PatternMatchingResult globbingResult = matcher.Match(virtualFilePaths);
+
+                        IEnumerable<string> fileMatches = globbingResult.Files.Select(f => f.Path);
+
+                        var sourceIsRooted = outSourceFile.StartsWith('/');
+                        if (sourceIsRooted)
+                        {
+                            fileMatches = fileMatches.Select(f => "/" + f);
+                        }
+
+                        if (!fileMatches.Any())
+                        {
+                            continue;
+                        }
+
+                        files.AddRange(fileMatches.Where(f => !files.Contains(f)));
+                    }
+                }
+
+                if (files.Count == 0)
+                {
+                    throw new FileNotFoundException($"No files found matching exist in an asset");
+                }
+
+                asset.Items[PhysicalFilesKey] = files;
+            }
 
             return files;
         }
@@ -155,8 +157,10 @@ namespace WebOptimizer
             return file.LastModified.UtcDateTime;
         }
 
-        public string GenerateCacheKey(HttpContext context)
+        public string GenerateCacheKey(HttpContext context, IWebOptimizerOptions options)
         {
+            var config = new AssetContext(context, this, options);
+
             var cacheKey = new StringBuilder(Route);
 
             if (context.Request.Headers.TryGetValue("Accept-Encoding", out StringValues enc))
@@ -166,16 +170,12 @@ namespace WebOptimizer
 
             IEnumerable<string> physicalFiles;
             var env = (IWebHostEnvironment)context.RequestServices.GetService(typeof(IWebHostEnvironment));
+            var cache = (IMemoryCache)context.RequestServices.GetService(typeof(IMemoryCache));
 
-            if (_fileVersionProvider == null)
-            {
-                var cache = (IMemoryCache)context.RequestServices.GetService(typeof(IMemoryCache));
-
-                _fileVersionProvider = new FileVersionProvider(
-                    this.GetFileProvider(env),
-                    cache,
-                    context.Request.PathBase);
-            }
+            var fileVersionProvider = new FileVersionProvider(
+                this.GetFileProvider(env),
+                cache,
+                context.Request.PathBase);
 
             if (!Items.ContainsKey(PhysicalFilesKey))
             {
@@ -190,7 +190,7 @@ namespace WebOptimizer
             {
                 foreach (string file in physicalFiles)
                 {
-                    cacheKey.Append(_fileVersionProvider.AddFileVersionToPath(file));
+                    cacheKey.Append(fileVersionProvider.AddFileVersionToPath(file));
                 }
             }
 
@@ -198,7 +198,7 @@ namespace WebOptimizer
             {
                 try
                 {
-                    cacheKey.Append(processors.CacheKey(context) ?? string.Empty);
+                    cacheKey.Append(processors.CacheKey(context, config) ?? string.Empty);
                 }
                 catch (Exception ex)
                 {
@@ -217,6 +217,24 @@ namespace WebOptimizer
         public override string ToString()
         {
             return Route;
+        }
+
+        /// <summary>
+        /// Adds a source file to the asset
+        /// </summary>
+        /// <param name="route">Relative path of a source file</param>
+        public void TryAddSourceFile(string route)
+        {
+            if (string.IsNullOrEmpty(route))
+                throw new ArgumentNullException(nameof(route));
+
+            string cleanRoute = route.TrimStart('~');
+
+            lock (_sync)
+            {
+                if (SourceFiles.Add(cleanRoute) && Items.ContainsKey(PhysicalFilesKey))
+                    Items.Remove(Asset.PhysicalFilesKey); //remove to calc a new cache key
+            }
         }
     }
 
@@ -242,7 +260,26 @@ namespace WebOptimizer
         /// </summary>
         public static IFileProvider GetFileProvider(this IAsset asset, IWebHostEnvironment env)
         {
-            return asset.GetCustomFileProvider(env) ?? env.WebRootFileProvider;
+            return asset.GetCustomFileProvider(env) ??
+                   (env.WebRootFileProvider is CompositeFileProvider
+                       ? (env.WebRootFileProvider as CompositeFileProvider).FileProviders.Last()
+                       : env.WebRootFileProvider);
+        }
+
+        /// <summary>
+        /// Adds a file name pattern for files that should be excluded from the results
+        /// </summary>
+        public static IAsset ExcludeFiles(this IAsset asset, params string[] filesToExclude)
+        {
+            if (filesToExclude.Length == 0)
+            {
+                throw new ArgumentException("At least one file has to be specified", nameof(filesToExclude));
+            }
+
+            foreach (string file in filesToExclude)
+                asset.ExcludeFiles.Add(file);
+
+            return asset;
         }
 
         /// <summary>
@@ -259,6 +296,55 @@ namespace WebOptimizer
 
             outpath = path;
             return provider;
+        }
+
+        /// <summary>
+        /// Returns all files from the file provider, beginning with <paramref name="start"/>
+        /// </summary>
+        /// <param name="provider"></param>
+        /// <param name="start"></param>
+        /// <returns></returns>
+        internal static IReadOnlyList<string> GetAllFiles(this IFileProvider provider, string start)
+        {
+            var files = new List<string>();
+            var dirs = new Queue<string>();
+
+            var infos = provider.GetDirectoryContents(start);
+
+            foreach (var info in infos)
+            {
+                if (info.IsDirectory)
+                {
+                    dirs.Enqueue(info.Name);
+                }
+                else if (info.Exists)
+                {
+                    files.Add(info.Name);
+                }
+            }
+
+            while (dirs.Count > 0)
+            {
+                var path = dirs.Dequeue();
+
+                infos = provider.GetDirectoryContents(path);
+
+                foreach (var info in infos)
+                {
+                    if (info.IsDirectory)
+                    {
+                        dirs.Enqueue(Path.Combine(path, info.Name));
+                    }
+                    else if (info.Exists)
+                    {
+                        files.Add(Path.Combine(path, info.Name));
+                    }
+                }
+
+            }
+
+
+            return files;
         }
     }
 }

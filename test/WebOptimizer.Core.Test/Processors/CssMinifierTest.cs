@@ -22,7 +22,7 @@ namespace WebOptimizer.Test.Processors
             await minifier.ExecuteAsync(context.Object);
 
             Assert.Equal("body{color:#ff0}", context.Object.Content.First().Value.AsString());
-            Assert.Equal("", minifier.CacheKey(new DefaultHttpContext()));
+            Assert.Equal("", minifier.CacheKey(new DefaultHttpContext(), context.Object));
         }
 
         [Theory2]
@@ -41,7 +41,7 @@ namespace WebOptimizer.Test.Processors
             await minifier.ExecuteAsync(context.Object);
 
             Assert.Equal("", context.Object.Content.First().Value.AsString());
-            Assert.Equal("", minifier.CacheKey(new DefaultHttpContext()));
+            Assert.Equal("", minifier.CacheKey(new DefaultHttpContext(), context.Object));
         }
 
         [Fact2]
@@ -56,7 +56,7 @@ namespace WebOptimizer.Test.Processors
             await minifier.ExecuteAsync(context.Object);
 
             Assert.Equal("body{color:yellow;}", context.Object.Content.First().Value.AsString());
-            Assert.Equal("", minifier.CacheKey(new DefaultHttpContext()));
+            Assert.Equal("", minifier.CacheKey(new DefaultHttpContext(), context.Object));
         }
 
         [Fact2]
@@ -70,7 +70,7 @@ namespace WebOptimizer.Test.Processors
             await minifier.ExecuteAsync(context.Object);
 
             Assert.Equal("body{color:#ff0}", context.Object.Content.First().Value.AsString());
-            Assert.Equal("", minifier.CacheKey(new DefaultHttpContext()));
+            Assert.Equal("", minifier.CacheKey(new DefaultHttpContext(), context.Object));
         }
 
         [Fact2]
@@ -81,10 +81,10 @@ namespace WebOptimizer.Test.Processors
 
             Assert.Equal("/foo.css", asset.Route);
             Assert.Equal("text/css; charset=UTF-8", asset.ContentType);
-            Assert.Equal(2, asset.SourceFiles.Count());
+            Assert.Equal(2, asset.SourceFiles.Count);
             Assert.Equal(6, asset.Processors.Count);
         }
-        
+
         [Fact2]
         public void AddCssBundle_DefaultSettings_SuccessRelative()
         {
@@ -93,10 +93,9 @@ namespace WebOptimizer.Test.Processors
 
             Assert.Equal("foo.css", asset.Route);
             Assert.Equal("text/css; charset=UTF-8", asset.ContentType);
-            Assert.Equal(2, asset.SourceFiles.Count());
+            Assert.Equal(2, asset.SourceFiles.Count);
             Assert.Equal(6, asset.Processors.Count);
         }
-
 
         [Fact2]
         public void AddCssBundle_CustomSettings_Success()
@@ -107,7 +106,7 @@ namespace WebOptimizer.Test.Processors
 
             Assert.Equal("/foo.css", asset.Route);
             Assert.Equal("text/css; charset=UTF-8", asset.ContentType);
-            Assert.Equal(2, asset.SourceFiles.Count());
+            Assert.Equal(2, asset.SourceFiles.Count);
             Assert.Equal(6, asset.Processors.Count);
         }
 
@@ -119,7 +118,7 @@ namespace WebOptimizer.Test.Processors
 
             Assert.Equal("**/*.css", asset.Route);
             Assert.Equal("text/css; charset=UTF-8", asset.ContentType);
-            Assert.True(1 == asset.SourceFiles.Count());
+            Assert.True(1 == asset.SourceFiles.Count);
             Assert.True(3 == asset.Processors.Count);
         }
     }

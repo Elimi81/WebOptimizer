@@ -24,7 +24,7 @@ namespace WebOptimizer.Test.Processors
             await minifier.ExecuteAsync(context.Object);
 
             Assert.Equal(output, context.Object.Content.First().Value.AsString());
-            Assert.Equal("", minifier.CacheKey(new DefaultHttpContext()));
+            Assert.Equal("", minifier.CacheKey(new DefaultHttpContext(), context.Object));
         }
 
         [Fact2]
@@ -38,7 +38,7 @@ namespace WebOptimizer.Test.Processors
             await minifier.ExecuteAsync(context.Object);
 
             Assert.StartsWith("<!--", context.Object.Content.First().Value.AsString());
-            Assert.Equal("", minifier.CacheKey(new DefaultHttpContext()));
+            Assert.Equal("", minifier.CacheKey(new DefaultHttpContext(), context.Object));
         }
 
         [Theory2]
@@ -57,7 +57,7 @@ namespace WebOptimizer.Test.Processors
             await minifier.ExecuteAsync(context.Object);
 
             Assert.Equal("", context.Object.Content.First().Value.AsString());
-            Assert.Equal("", minifier.CacheKey(new DefaultHttpContext()));
+            Assert.Equal("", minifier.CacheKey(new DefaultHttpContext(), context.Object));
         }
 
         [Fact2]
@@ -72,7 +72,7 @@ namespace WebOptimizer.Test.Processors
             await minifier.ExecuteAsync(context.Object);
 
             Assert.Equal("<!-- foo -->", context.Object.Content.First().Value.AsString());
-            Assert.Equal("", minifier.CacheKey(new DefaultHttpContext()));
+            Assert.Equal("", minifier.CacheKey(new DefaultHttpContext(), context.Object));
         }
 
         [Fact2]
@@ -83,7 +83,7 @@ namespace WebOptimizer.Test.Processors
 
             Assert.Equal("/foo.html", asset.Route);
             Assert.Equal("text/html; charset=UTF-8", asset.ContentType);
-            Assert.Equal(2, asset.SourceFiles.Count());
+            Assert.Equal(2, asset.SourceFiles.Count);
             Assert.Equal(3, asset.Processors.Count);
         }
 
@@ -96,7 +96,7 @@ namespace WebOptimizer.Test.Processors
 
             Assert.Equal("/foo.html", asset.Route);
             Assert.Equal("text/html; charset=UTF-8", asset.ContentType);
-            Assert.Equal(2, asset.SourceFiles.Count());
+            Assert.Equal(2, asset.SourceFiles.Count);
             Assert.Equal(3, asset.Processors.Count);
         }
 
@@ -108,7 +108,7 @@ namespace WebOptimizer.Test.Processors
 
             Assert.Equal("**/*.html", asset.Route);
             Assert.Equal("text/html; charset=UTF-8", asset.ContentType);
-            Assert.True(1 == asset.SourceFiles.Count());
+            Assert.True(1 == asset.SourceFiles.Count);
             Assert.True(1 == asset.Processors.Count);
         }
     }
